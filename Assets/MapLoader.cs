@@ -9,8 +9,17 @@ using Python.Runtime;
 
 public class MapLoader : MonoBehaviour
 {
-    // Timestamp object [FOR TESTING ONLY]
-    [SerializeField] private GameObject TimestampObj;
+    // Stopwatch
+    System.Diagnostics.Stopwatch stopwatch = new System.Diagnostics.Stopwatch();
+
+    // Random number generator
+    private System.Random rng = new System.Random(Guid.NewGuid().GetHashCode());
+
+
+    // Coin object
+    [SerializeField] private GameObject CoinObj;
+    [SerializeField] private float CoinScale;
+    [SerializeField] private float SpawnThreshold;
 
     // Time
     public float elapsedTime = 0;
@@ -32,7 +41,11 @@ public class MapLoader : MonoBehaviour
     [SerializeField] public GameObject WaterBlock;
 
     // Toggles
+    [SerializeField] public bool IsWorldReady = false;
     [SerializeField] public bool IsWorldBuilt = false;
+
+    // Lanes
+    [SerializeField] public Tuple<float, float, float> Lanes = Tuple.Create(-1.7f, 0f, 1.7f);
 
     public AudioSource audioSource;
     public AudioClip clip;
@@ -43,6 +56,12 @@ public class MapLoader : MonoBehaviour
     {
         new ExtensionFilter("Audio files", "mp3", "wav", "ogg", "aif", "aiff")
     };
+
+    // Temp
+    private float currentLane;
+    private float prevNoteLocation;
+
+
 
     Tuple<int, List<float>> GetNoteTimestamp(string file_path)
     {
@@ -113,21 +132,53 @@ public class MapLoader : MonoBehaviour
 
     void BuildLevel()
     {
+
         CalculatedSpeed = BaseSpeed * noteDetectionData.Item1;
         roadLength = CalculatedSpeed * songDuration;
         roadSegmentCount = (float)(roadLength / 6.319 * 2);
         roadSegment.transform.localScale = new Vector3(roadSegmentCount, 1, 1);
         WaterBlock.transform.localScale = new Vector3((float)(roadLength / 20), 1, (float)(roadLength / 20));
-        foreach (float timestamp in noteDetectionData.Item2)
+        if (!IsWorldBuilt)
         {
-            Debug.Log(timestamp);
-            Instantiate(TimestampObj, new Vector3(0, (float)-3.9, (float)(-CalculatedSpeed * timestamp)), new Quaternion());
+            GameObject ClonedCoinObj;
+            foreach (float timestamp in noteDetectionData.Item2)
+            {
+                Debug.Log(-CalculatedSpeed * timestamp - prevNoteLocation);
+                if ((float)Math.Abs(-CalculatedSpeed * timestamp - prevNoteLocation) > SpawnThreshold)
+                {
+                    Debug.Log(timestamp);
+                    int random = rng.Next(0, Lanes.GetType().GetGenericArguments().Length);
+                    switch (random)
+                    {
+                        case 0:
+                            ClonedCoinObj = Instantiate(CoinObj, new Vector3(Lanes.Item1, (float)-3.9, (float)(-CalculatedSpeed * timestamp)), new Quaternion());
+                            Debug.Log($"Spawned object {CoinObj} at {-CalculatedSpeed * timestamp} at lane {Lanes.Item1}");
+                            break;
+                        case 1:
+                            ClonedCoinObj = Instantiate(CoinObj, new Vector3(Lanes.Item2, (float)-3.9, (float)(-CalculatedSpeed * timestamp)), new Quaternion());
+                            Debug.Log($"Spawned object {CoinObj} at {-CalculatedSpeed * timestamp} at lane {Lanes.Item2}");
+                            break;
+                        case 2:
+                            ClonedCoinObj = Instantiate(CoinObj, new Vector3(Lanes.Item3, (float)-3.9, (float)(-CalculatedSpeed * timestamp)), new Quaternion());
+                            Debug.Log($"Spawned object {CoinObj} at {-CalculatedSpeed * timestamp} at lane {Lanes.Item3}");
+                            break;
+                    }
+
+                    prevNoteLocation = (float)-CalculatedSpeed * timestamp;
+                }
+            }
+            IsWorldBuilt = true;
         }
+        stopwatch.Stop();
+        Debug.Log($"Map build took {stopwatch.Elapsed}");
+
     }
 
     // Start is called before the first frame update
     void Start()
     {
+
+        CoinObj.transform.localScale = new Vector3(CoinScale, CoinScale, CoinScale);
         audioSource = gameObject.GetComponent(typeof(AudioSource)) as AudioSource;
         string[] filePath = StandaloneFileBrowser.OpenFilePanel("Choose a song...", musicFolderLocation, filters, false);
         if (filePath.Length > 0) 
@@ -139,25 +190,33 @@ public class MapLoader : MonoBehaviour
             Application.Quit();
         }
 
+        stopwatch.Start();
         noteDetectionData = GetNoteTimestamp(filePath[0]);
-
+        Debug.Log($"Note estimation took {stopwatch.Elapsed}");
+        stopwatch.Stop();
     }
 
     // Update is called once per frame
     void Update()
     {
         elapsedTime = audioSource.time;
-        if (!IsWorldBuilt)
-        { 
+        if (!IsWorldReady)
+        {
+            stopwatch.Restart();
             BuildLevel();
+            
             if (CalculatedSpeed != 0 && roadLength != 0 && roadSegmentCount != 0)
             {
-                IsWorldBuilt = true;
+                IsWorldReady = true;
+
+
+                Debug.Log($"Building map took {stopwatch.Elapsed}");
+                stopwatch.Stop();
             }
             
         }
         
-        if (!audioSource.isPlaying && IsWorldBuilt && !finished)
+        if (!audioSource.isPlaying && IsWorldReady && !finished)
         {
             audioSource.Play();
            
